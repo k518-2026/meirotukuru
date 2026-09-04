@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>迷路ジェネレーター</title>
+    <style>
+        /* =========================================
+           1. 全体設定・リセット
+           ========================================= */
+        :root {
+            --primary-blue: #3b82f6;
+            --primary-green: #22c55e;
+            --bg-color: #f0f4f8;
+            --panel-bg: #ffffff;
+            --text-main: #1f2937;
+            --text-muted: #6b7280;
+            --border-color: #e5e7eb;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            height: 100vh;
+            padding: 20px;
+            gap: 20px;
+        }
+
+        /* =========================================
+           2. レイアウト（サイドバーとメイン画面）
+           ========================================= */
+        .sidebar {
+            width: 320px;
+            background: var(--panel-bg);
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            overflow-y: auto;
+        }
+
+        .main-content {
+            flex: 1;
+            background: var(--panel-bg);
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* =========================================
+           3. UIコンポーネント（サイドバー内）
+           ========================================= */
+        h2 { font-size: 1.25rem; margin-bottom: 10px; }
+        
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .control-group label {
+            font-weight: 600;
+            font-size: 0.9rem;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            cursor: pointer;
+        }
+
+        select {
+            padding: 8px;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            font-size: 1rem;
+            cursor: pointer;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .btn {
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: bold;
+            color: white;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        .btn:hover { opacity: 0.9; }
+        .btn-blue { background-color: var(--primary-blue); }
+        .btn-green { background-color: var(--primary-green); }
+
+        /* =========================================
+           4. キャンバスエリア（メイン画面内）
+           ========================================= */
+        .canvas-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        .canvas-container {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #fafafa;
+            border: 2px dashed var(--border-color);
+            border-radius: 8px;
+            overflow: auto;
+            position: relative;
+        }
+
+        canvas {
+            background-color: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+    </style>
+</head>
+<body>
+
+    <aside class="sidebar">
+        <h2>迷路の設定</h2>
+        
+        <div class="control-group">
+            <label>行（縦のマス数） <span id="rows-val">25</span></label>
+            <input type="range" id="rows" min="10" max="50" value="25">
+        </div>
+
+        <div class="control-group">
+            <label>列（横のマス数） <span id="cols-val">25</span></label>
+            <input type="range" id="cols" min="10" max="50" value="25">
+        </div>
+
+        <div class="control-group">
+            <label for="difficulty">難易度</label>
+            <select id="difficulty">
+                <option value="easy">初級（複数の正解ルート）</option>
+                <option value="medium" selected>中級（標準的な迷路）</option>
+                <option value="hard">上級（複雑で長い経路）</option>
+            </select>
+        </div>
+
+        <div class="control-group">
+            <label class="checkbox-group">
+                <input type="checkbox" id="show-solution"> 正解ルートを表示
+            </label>
+        </div>
+
+        <div style="flex: 1;"></div> <button class="btn btn-blue" id="btn-generate">新しい迷路を作成</button>
+        <button class="btn btn-green" id="btn-download">画像として保存</button>
+    </aside>
+
+    <main class="main-content">
+        <div class="canvas-header">
+            <span id="maze-info">現在の迷路: 25 x 25 (中級（標準的な迷路）)</span>
+        </div>
+        <div class="canvas-container">
+            <canvas id="maze-canvas"></canvas>
+        </div>
+    </main>
+
+    <script>
+        /**
+         * =========================================================
+         * 迷路生成ロジック部 (Core Logic)
+         * =========================================================
+         */
+        class MazeGenerator {
+            constructor(rows, cols, difficulty) {
+                this.rows = rows;
+                this.cols = cols;
+                this.difficulty = difficulty;
+                this.grid = [];
+                this.solutionPath = [];
+                this.initGrid();
+            }
+
+            initGrid() {
+                for (let r = 0; r < this.rows; r++) {
+                    let row = [];
+                    for (let c = 0; c < this.cols; c++) {
+                        row.push({
+                            r: r, c: c,
+                            walls: { top: true, right: true, bottom: true, left: true },
+                            visited: false
+                        });
+                    }
+                    this.grid.push(row);
+                }
+            }
+
+            generate() {
+                let current = this.grid[0][0];
+                current.visited = true;
+                let stack = [current];
+
+                while (stack.length > 0) {
+                    let cell = stack[stack.length - 1];
+                    let unvisitedNeighbors = this.getUnvisitedNeighbors(cell);
+
+                    if (unvisitedNeighbors.length > 0) {
+                        let next = unvisitedNeighbors[Math.floor(Math.random() * unvisitedNeighbors.length)];
+                        this.removeWalls(cell, next);
+                        next.visited = true;
+                        stack.push(next);
+                    } else {
+                        stack.pop();
+                    }
+                }
+
+                if (this.difficulty === 'easy') {
+                    this.removeRandomWalls(Math.floor((this.rows * this.cols) * 0.1));
+                }
+
+                // スタートとゴールの外壁を開ける
+                this.grid[0][0].walls.top = false;
+                this.grid[this.rows - 1][this.cols - 1].walls.bottom = false;
+            }
+
+            getUnvisitedNeighbors(cell) {
+                let neighbors = [];
+                let { r, c } = cell;
+                if (r > 0 && !this.grid[r-1][c].visited) neighbors.push(this.grid[r-1][c]);
+                if (c < this.cols - 1 && !this.grid[r][c+1].visited) neighbors.push(this.grid[r][c+1]);
+                if (r < this.rows - 1 && !this.grid[r+1][c].visited) neighbors.push(this.grid[r+1][c]);
+                if (c > 0 && !this.grid[r][c-1].visited) neighbors.push(this.grid[r][c-1]);
+                return neighbors;
+            }
+
+            removeWalls(a, b) {
+                let x = a.c - b.c;
+                if (x === 1) { a.walls.left = false; b.walls.right = false; }
+                else if (x === -1) { a.walls.right = false; b.walls.left = false; }
+
+                let y = a.r - b.r;
+                if (y === 1) { a.walls.top = false; b.walls.bottom = false; }
+                else if (y === -1) { a.walls.bottom = false; b.walls.top = false; }
+            }
+
+            removeRandomWalls(count) {
+                for(let i=0; i<count; i++) {
+                    let r = Math.floor(Math.random() * (this.rows - 2)) + 1;
+                    let c = Math.floor(Math.random() * (this.cols - 2)) + 1;
+                    let cell = this.grid[r][c];
+                    let walls = Object.keys(cell.walls).filter(k => cell.walls[k]);
+                    if(walls.length > 0) {
+                        let targetWall = walls[Math.floor(Math.random() * walls.length)];
+                        cell.walls[targetWall] = false;
+                    }
+                }
+            }
+
+            solve() {
+                let start = this.grid[0][0];
+                let end = this.grid[this.rows - 1][this.cols - 1];
+                let queue = [[start]];
+                let visited = new Set([`0,0`]);
+
+                while (queue.length > 0) {
+                    let path = queue.shift();
+                    let current = path[path.length - 1];
+
+                    if (current === end) {
+                        this.solutionPath = path;
+                        return;
+                    }
+
+                    let neighbors = this.getAccessibleNeighbors(current);
+                    for (let next of neighbors) {
+                        let key = `${next.r},${next.c}`;
+                        if (!visited.has(key)) {
+                            visited.add(key);
+                            queue.push([...path, next]);
+                        }
+                    }
+                }
+            }
+
+            getAccessibleNeighbors(cell) {
+                let neighbors = [];
+                let { r, c } = cell;
+                if (!cell.walls.top && r > 0) neighbors.push(this.grid[r-1][c]);
+                if (!cell.walls.right && c < this.cols - 1) neighbors.push(this.grid[r][c+1]);
+                if (!cell.walls.bottom && r < this.rows - 1) neighbors.push(this.grid[r+1][c]);
+                if (!cell.walls.left && c > 0) neighbors.push(this.grid[r][c-1]);
+                return neighbors;
+            }
+        }
+
+        /**
+         * =========================================================
+         * ビュー・コントローラー部 (UI Interaction & Rendering)
+         * =========================================================
+         */
+        const App = {
+            state: {
+                maze: null,
+                cellSize: 20 // 1セルのピクセルサイズ
+            },
+            
+            elements: {
+                rowsSlider: document.getElementById('rows'),
+                colsSlider: document.getElementById('cols'),
+                rowsVal: document.getElementById('rows-val'),
+                colsVal: document.getElementById('cols-val'),
+                difficulty: document.getElementById('difficulty'),
+                showSolution: document.getElementById('show-solution'),
+                btnGenerate: document.getElementById('btn-generate'),
+                btnDownload: document.getElementById('btn-download'),
+                mazeInfo: document.getElementById('maze-info'),
+                canvas: document.getElementById('maze-canvas')
+            },
+
+            init() {
+                this.ctx = this.elements.canvas.getContext('2d');
+                this.bindEvents();
+                this.generateNewMaze();
+            },
+
+            bindEvents() {
+                this.elements.rowsSlider.addEventListener('input', (e) => this.elements.rowsVal.textContent = e.target.value);
+                this.elements.colsSlider.addEventListener('input', (e) => this.elements.colsVal.textContent = e.target.value);
+
+                this.elements.btnGenerate.addEventListener('click', () => this.generateNewMaze());
+                this.elements.showSolution.addEventListener('change', () => this.renderMaze());
+                this.elements.btnDownload.addEventListener('click', () => this.downloadMaze());
+            },
+
+            generateNewMaze() {
+                const rows = parseInt(this.elements.rowsSlider.value, 10);
+                const cols = parseInt(this.elements.colsSlider.value, 10);
+                const diff = this.elements.difficulty.value;
+
+                if (rows < 5 || rows > 100 || cols < 5 || cols > 100) {
+                    alert("行と列は5から100の間で設定してください。");
+                    return;
+                }
+
+                this.state.maze = new MazeGenerator(rows, cols, diff);
+                this.state.maze.generate();
+                this.state.maze.solve();
+
+                this.elements.mazeInfo.textContent = `現在の迷路: ${rows} x ${cols} (${this.elements.difficulty.options[this.elements.difficulty.selectedIndex].text})`;
+                
+                this.renderMaze();
+            },
+
+            renderMaze() {
+                const maze = this.state.maze;
+                const cs = this.state.cellSize;
+                const canvas = this.elements.canvas;
+                const ctx = this.ctx;
+
+                // 修正ポイント1: 文字が見切れないようにキャンバスの余白を 40 から 60 に拡大しました
+                const padding = 60; 
+                canvas.width = maze.cols * cs + (padding * 2);
+                canvas.height = maze.rows * cs + (padding * 2);
+
+                ctx.fillStyle = "#ffffff";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                const offsetX = padding;
+                const offsetY = padding;
+
+                // 1. 解決ルートの描画
+                if (this.elements.showSolution.checked && maze.solutionPath.length > 0) {
+                    ctx.beginPath();
+                    ctx.strokeStyle = "rgba(59, 130, 246, 0.4)";
+                    ctx.lineWidth = cs * 0.4;
+                    ctx.lineCap = "round";
+                    ctx.lineJoin = "round";
+
+                    const startCell = maze.solutionPath[0];
+                    ctx.moveTo(offsetX + startCell.c * cs + cs/2, offsetY + startCell.r * cs + cs/2);
+
+                    for (let i = 1; i < maze.solutionPath.length; i++) {
+                        const cell = maze.solutionPath[i];
+                        ctx.lineTo(offsetX + cell.c * cs + cs/2, offsetY + cell.r * cs + cs/2);
+                    }
+                    ctx.stroke();
+                }
+
+                // 2. 迷路の壁の描画
+                ctx.strokeStyle = "#000000";
+                ctx.lineWidth = 2;
+                ctx.lineCap = "square";
+                
+                ctx.beginPath();
+                for (let r = 0; r < maze.rows; r++) {
+                    for (let c = 0; c < maze.cols; c++) {
+                        let x = offsetX + c * cs;
+                        let y = offsetY + r * cs;
+                        let cell = maze.grid[r][c];
+
+                        if (cell.walls.top) { ctx.moveTo(x, y); ctx.lineTo(x + cs, y); }
+                        if (cell.walls.right) { ctx.moveTo(x + cs, y); ctx.lineTo(x + cs, y + cs); }
+                        if (cell.walls.bottom) { ctx.moveTo(x, y + cs); ctx.lineTo(x + cs, y + cs); }
+                        if (cell.walls.left) { ctx.moveTo(x, y); ctx.lineTo(x, y + cs); }
+                    }
+                }
+                ctx.stroke();
+
+                // 修正ポイント2: アイコン（円）のY座標を迷路から離すように上に調整しました
+                // スタート位置: offsetY - 25
+                // ゴール位置: offsetY + maze.rows * cs + 20
+                this.drawMarker(ctx, offsetX + cs/2, offsetY - 25, "#22c55e", "スタート");
+                this.drawMarker(ctx, offsetX + maze.cols * cs - cs/2, offsetY + maze.rows * cs + 20, "#ef4444", "ゴール");
+            },
+
+            drawMarker(ctx, x, y, color, text) {
+                // アイコン（円）の描画
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                ctx.arc(x, y, 8, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // テキストの描画
+                ctx.fillStyle = "#1f2937";
+                ctx.font = "bold 10px sans-serif";
+                ctx.textAlign = "center";
+                // Y座標に+18ピクセル足して、円の少し下にテキストを配置
+                ctx.fillText(text, x, y + 18);
+            },
+
+            downloadMaze() {
+                const link = document.createElement('a');
+                link.download = `maze-${this.state.maze.rows}x${this.state.maze.cols}.png`;
+                link.href = this.elements.canvas.toDataURL('image/png');
+                link.click();
+            }
+        };
+
+        document.addEventListener('DOMContentLoaded', () => App.init());
+    </script>
+</body>
+</html>
