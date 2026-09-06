@@ -1,5 +1,8 @@
 # 迷路ジェネレーター (Maze Generator)
 
+実際のページ.
+https://k518-2026.github.io/meirotukuru/
+
 ブラウザ上で動作する、カスタマイズ可能な迷路生成・解析Webアプリケーションです。
 外部ライブラリ（jQueryやReactなど）を一切使用せず、バニラなHTML / CSS / JavaScriptのみ、かつ単一ファイルで完結するように設計されています。
 
